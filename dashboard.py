@@ -25,8 +25,8 @@ st.set_page_config(
 # ─── Sidebar controls ───────────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ Controls")
-    top_n   = st.slider("Top N by volume", 5, 30, 10)
-    coins   = get_top_pairs(top_n)
+    top_n    = st.slider("Top N by volume", 5, 30, 10)
+    coins    = get_top_pairs(top_n)
     selected = st.multiselect("Select coins", coins, default=coins[:3])
 
     # Load existing profit logs
@@ -86,14 +86,14 @@ col4.metric("ROI", f"{roi:.2f}%")
 # ─── Daily P&L chart ─────────────────────────────────────────────────────────
 with st.expander("📈 Daily P&L", expanded=True):
     if not df_filtered.empty:
+        sell_pnl = df_filtered[df_filtered["action"]=="sell"].groupby("date")["quoteQty"].sum()
+        buy_pnl  = df_filtered[df_filtered["action"]=="buy"].groupby("date")["quoteQty"].sum()
         daily = (
-            df_filtered[df_filtered["action"]=="sell"]
-            .groupby("date")["quoteQty"].sum()
-            - df_filtered[df_filtered["action"]=="buy"]
-            .groupby("date")["quoteQty"].sum()
-        ).reset_index(name="pnl")
+            sell_pnl.reindex(pd.date_range(min_d, max_d), fill_value=0)
+            - buy_pnl.reindex(pd.date_range(min_d, max_d), fill_value=0)
+        ).reset_index(name="pnl").rename(columns={"index":"date"})
     else:
-        daily = pd.DataFrame({"date":[min_d, max_d], "pnl":[0,0]})
+        daily = pd.DataFrame({"date":[min_d, max_d], "pnl":[0, 0]})
 
     chart = (
         alt.Chart(daily)
@@ -111,22 +111,26 @@ with st.expander("📈 Daily P&L", expanded=True):
 with st.expander("🔮 7-Day Forecasts", expanded=False):
     rows = []
     for coin in selected:
-        for i, price in enumerate(forecasts.get(coin, []), start=1):
+        preds = forecasts.get(coin) or []
+        for i, price in enumerate(preds, start=1):
             rows.append({"coin": coin, "day": i, "price": price})
     df_fc = pd.DataFrame(rows)
 
-    fc_chart = (
-        alt.Chart(df_fc)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("day:O", title="Day +"),
-            y=alt.Y("price:Q", title="Price ($)"),
-            color=alt.Color("coin:N"),
-            tooltip=["coin","day","price"],
+    if not df_fc.empty:
+        fc_chart = (
+            alt.Chart(df_fc)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("day:O", title="Day +"),
+                y=alt.Y("price:Q", title="Price ($)"),
+                color=alt.Color("coin:N"),
+                tooltip=["coin","day","price"],
+            )
+            .properties(height=300)
         )
-        .properties(height=300)
-    )
-    st.altair_chart(fc_chart, use_container_width=True)
+        st.altair_chart(fc_chart, use_container_width=True)
+    else:
+        st.write("No forecast data available.")
 
 # ─── Recent trades table ─────────────────────────────────────────────────────
 with st.expander("📝 Recent Trades", expanded=False):
