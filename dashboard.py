@@ -8,6 +8,7 @@ nest_asyncio.apply()
 import pandas as pd
 import streamlit as st
 import altair as alt
+import requests
 from datetime import datetime, date, timedelta
 
 from modules.data_collector import collect_historical_data
@@ -86,9 +87,10 @@ col4.metric("ROI", f"{roi:.2f}%")
 # ─── Daily P&L chart ─────────────────────────────────────────────────────────
 with st.expander("📈 Daily P&L", expanded=True):
     if not df_filtered.empty:
-        sell_pnl = df_filtered[df_filtered["action"]=="sell"].groupby("date")["quoteQty"].sum()
-        buy_pnl  = df_filtered[df_filtered["action"]=="buy"].groupby("date")["quoteQty"].sum()
-        # fill missing dates
+        sell_pnl = df_filtered[df_filtered["action"]=="sell"]\
+            .groupby("date")["quoteQty"].sum()
+        buy_pnl  = df_filtered[df_filtered["action"]=="buy"]\
+            .groupby("date")["quoteQty"].sum()
         idx = pd.date_range(min_d, max_d)
         daily = (
             sell_pnl.reindex(idx, fill_value=0)
@@ -112,12 +114,16 @@ with st.expander("📈 Daily P&L", expanded=True):
 with st.expander("🔮 7-Day Forecasts", expanded=False):
     rows = []
     for coin in selected:
-        # try real forecasts
-        preds = forecasts.get(coin) or []
-        # if none, dummy linear +1% per day
-        if not preds and hist_data.get(coin) is not None:
-            last = hist_data[coin]["close"].iloc[-1]
-            preds = [last * (1 + 0.01*i) for i in range(1,8)]
+        preds = forecasts.get(coin, [])
+        # fallback dummy if no real forecasts
+        if not preds:
+            # try price ticker
+            try:
+                resp = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={coin}USDT", timeout=5)
+                price = float(resp.json().get("price", 0))
+            except Exception:
+                price = hist_data.get(coin)["close"].iloc[-1] if coin in hist_data else 0
+            preds = [price * (1 + 0.01 * i) for i in range(1, 8)]
         for i, price in enumerate(preds, start=1):
             rows.append({"coin": coin, "day": i, "price": price})
     df_fc = pd.DataFrame(rows)
@@ -131,7 +137,7 @@ with st.expander("🔮 7-Day Forecasts", expanded=False):
             .encode(
                 x="day:O", y="price:Q",
                 color="coin:N",
-                tooltip=["coin","day","price"],
+                tooltip=["coin", "day", "price"],
             )
             .properties(height=300)
         )
@@ -141,6 +147,9 @@ with st.expander("🔮 7-Day Forecasts", expanded=False):
 with st.expander("📝 Recent Trades", expanded=False):
     if not df_logs.empty:
         recent = df_logs.sort_values("timestamp", ascending=False)
-        st.dataframe(recent[["timestamp","symbol","action","quoteQty"]], use_container_width=True)
+        st.dataframe(
+            recent[["timestamp","symbol","action","quoteQty"]],
+            use_container_width=True,
+        )
     else:
         st.warning("No trades logged yet. Run your trading bot locally to generate logs.")
