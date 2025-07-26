@@ -16,7 +16,7 @@ from modules.forecaster     import predict_prices
 from modules.profit_tracker import load_profits
 from modules.coin_list      import get_top_pairs
 
-# ─── Page configuration ─────────────────────────────────────────────────────
+# ─── Page config ─────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CryptoBot Dashboard",
     layout="wide",
@@ -30,17 +30,18 @@ with st.sidebar:
     coins    = get_top_pairs(top_n)
     selected = st.multiselect("Select coins", coins, default=coins[:3])
 
-    # Load existing profit logs
+    # Load & clean profit logs
     df_logs = load_profits()
-
-    # Defensive defaults if logs are empty
-    if df_logs.empty:
-        max_d = date.today()
-        min_d = max_d - timedelta(days=7)
-    else:
-        df_logs["date"] = pd.to_datetime(df_logs["timestamp"]).dt.date
+    if not df_logs.empty:
+        df_logs["quoteQty"] = pd.to_numeric(df_logs["quoteQty"], errors="coerce").fillna(0.0)
+        df_logs["action"]   = df_logs["action"].str.lower()
+        df_logs["date"]     = pd.to_datetime(df_logs["timestamp"]).dt.date
         min_d = df_logs["date"].min()
         max_d = df_logs["date"].max()
+    else:
+        # No logs yet → default to last 7 days
+        max_d = date.today()
+        min_d = max_d - timedelta(days=7)
 
     drange = st.date_input(
         "P&L date range",
@@ -63,9 +64,9 @@ hist_data, forecasts = load_data(selected)
 
 # ─── Summary metrics ─────────────────────────────────────────────────────────
 st.markdown("## 📊 Summary Metrics")
-col1, col2, col3, col4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4)
 
-# Filter logs by selected date range
+# Filter logs by date range
 if not df_logs.empty:
     df_filtered = df_logs[
         (df_logs["date"] >= drange[0]) & (df_logs["date"] <= drange[1])
@@ -79,22 +80,20 @@ realized     = df_filtered[df_filtered["action"]=="sell"]["quoteQty"].sum()
 pnl          = realized - invested
 roi          = (pnl / invested * 100) if invested else 0.0
 
-col1.metric("Trades", total_trades)
-col2.metric("Invested", f"${invested:,.2f}")
-col3.metric("P&L", f"${pnl:,.2f}")
-col4.metric("ROI", f"{roi:.2f}%")
+c1.metric("Trades", total_trades)
+c2.metric("Invested", f"${invested:,.2f}")
+c3.metric("P&L",      f"${pnl:,.2f}")
+c4.metric("ROI",      f"{roi:.2f}%")
 
 # ─── Daily P&L chart ─────────────────────────────────────────────────────────
 with st.expander("📈 Daily P&L", expanded=True):
     if not df_filtered.empty:
-        sell_pnl = df_filtered[df_filtered["action"]=="sell"]\
-            .groupby("date")["quoteQty"].sum()
-        buy_pnl  = df_filtered[df_filtered["action"]=="buy"]\
-            .groupby("date")["quoteQty"].sum()
-        idx = pd.date_range(min_d, max_d)
-        daily = (
-            sell_pnl.reindex(idx, fill_value=0)
-            - buy_pnl.reindex(idx, fill_value=0)
+        sell_tot = df_filtered[df_filtered["action"]=="sell"].groupby("date")["quoteQty"].sum()
+        buy_tot  = df_filtered[df_filtered["action"]=="buy"] .groupby("date")["quoteQty"].sum()
+        idx      = pd.date_range(min_d, max_d)
+        daily    = (
+            sell_tot.reindex(idx, fill_value=0)
+           -buy_tot .reindex(idx, fill_value=0)
         ).reset_index(name="pnl").rename(columns={"index":"date"})
     else:
         daily = pd.DataFrame({"date":[min_d, max_d], "pnl":[0, 0]})
@@ -106,28 +105,33 @@ with st.expander("📈 Daily P&L", expanded=True):
             x="date:T", y="pnl:Q",
             tooltip=[alt.Tooltip("date:T"), alt.Tooltip("pnl:Q", format=",.2f")],
         )
-        .properties(height=300)
+        .properties(height=300, title="Daily P&L")
     )
     st.altair_chart(chart, use_container_width=True)
 
-# ─── Forecast comparison ────────────────────────────────────────────────────
+# ─── 7-Day Forecast comparison ────────────────────────────────────────────────
 with st.expander("🔮 7-Day Forecasts", expanded=False):
     rows = []
     for coin in selected:
-        preds = forecasts.get(coin, [])
-        # fallback dummy if no real forecasts
+        preds = forecasts.get(coin) or []
         if not preds:
-            # try price ticker
+            # 1) Try live ticker
             try:
-                resp = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={coin}USDT", timeout=5)
-                price = float(resp.json().get("price", 0))
+                resp  = requests.get(
+                    f"https://api.binance.com/api/v3/ticker/price?symbol={coin}USDT",
+                    timeout=5
+                )
+                base_price = float(resp.json().get("price", 0))
             except Exception:
-                price = hist_data.get(coin)["close"].iloc[-1] if coin in hist_data else 0
-            preds = [price * (1 + 0.01 * i) for i in range(1, 8)]
-        for i, price in enumerate(preds, start=1):
-            rows.append({"coin": coin, "day": i, "price": price})
-    df_fc = pd.DataFrame(rows)
+                # 2) Fallback to last close in history
+                base_price = hist_data.get(coin)["close"].iloc[-1] if coin in hist_data else 0
+            # 3) Dummy linear +1%/day
+            preds = [ base_price * (1 + 0.01 * i) for i in range(1,8) ]
 
+        for day, price in enumerate(preds, start=1):
+            rows.append({"coin": coin, "day": day, "price": price})
+
+    df_fc = pd.DataFrame(rows)
     if df_fc.empty:
         st.write("No forecast data available.")
     else:
@@ -137,19 +141,19 @@ with st.expander("🔮 7-Day Forecasts", expanded=False):
             .encode(
                 x="day:O", y="price:Q",
                 color="coin:N",
-                tooltip=["coin", "day", "price"],
+                tooltip=["coin","day","price"],
             )
-            .properties(height=300)
+            .properties(height=300, title="7-Day Forecasts")
         )
         st.altair_chart(fc_chart, use_container_width=True)
 
-# ─── Recent trades table ─────────────────────────────────────────────────────
+# ─── Recent trades ───────────────────────────────────────────────────────────
 with st.expander("📝 Recent Trades", expanded=False):
     if not df_logs.empty:
         recent = df_logs.sort_values("timestamp", ascending=False)
         st.dataframe(
             recent[["timestamp","symbol","action","quoteQty"]],
-            use_container_width=True,
+            use_container_width=True
         )
     else:
-        st.warning("No trades logged yet. Run your trading bot locally to generate logs.")
+        st.warning("No trades logged yet. Run your bot locally to generate logs.")
