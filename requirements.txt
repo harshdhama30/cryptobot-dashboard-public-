@@ -4,3 +4,5 @@ pandas
 python-binance
 scikit-learn
 nest-asyncio
+requests
+requests

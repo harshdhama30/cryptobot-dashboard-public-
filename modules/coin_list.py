@@ -1,22 +1,26 @@
 # modules/coin_list.py
 
 """
-Lazy-loaded helper to fetch top N coin symbols by 24h USDT volume.
+Helper to fetch top N coin symbols by 24h USDT volume using Binance public REST API.
+Lazy-loading without requiring an authenticated Binance client at import time.
 """
 from typing import List
-from modules.binance_api import _get_client
+import requests
+
+BINANCE_API_URL = "https://api.binance.com/api/v3/ticker/24hr"
 
 
 def get_top_pairs(n: int = 10) -> List[str]:
     """
     Return the top `n` base symbols (e.g. 'BTC','ETH',…) 
-    sorted by 24h USDT trading volume, using a lazy-loaded Binance client.
+    sorted by 24h USDT trading volume using Binance public API.
     """
-    client = _get_client()
     try:
-        tickers = client.get_ticker()  # fetch 24h stats for all symbols
+        resp = requests.get(BINANCE_API_URL, timeout=10)
+        resp.raise_for_status()
+        tickers = resp.json()
     except Exception as e:
-        print(f"⚠️ Error fetching tickers: {e}")
+        print(f"⚠️ Error fetching tickers from public API: {e}")
         return []
 
     # Filter for USDT-quoted markets
