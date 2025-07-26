@@ -1,0 +1,8 @@
+{
+  "expo": {
+    // … your existing config …
+    "plugins": [
+      "expo-dev-client"
+    ]
+  }
+}
