@@ -1,38 +1,32 @@
 # modules/coin_list.py
 
-from binance.client import Client
+"""
+Lazy-loaded helper to fetch top N coin symbols by 24h USDT volume.
+"""
+from typing import List
+from modules.binance_api import _get_client
 
-# ─── Your Binance Credentials ─────────────────────────────────────────────
-API_KEY    = "W5rhVJF0G4KZflh7mtuTFdQ0SbEweXgqlF825WwkVIKbzCK1m8GDGO5eKKcu5KHw"
-API_SECRET = "BL9Ath1uiNOu6LZKP0vNWQkoVHhVEd2DCPL4Tyke908uHv9wCDit9sfi5gJKYapq"
 
-# Set to True if you want to hit the TESTNET instead of live
-TESTNET    = False
-
-def get_top_pairs(n: int = 10) -> list[str]:
+def get_top_pairs(n: int = 10) -> List[str]:
     """
-    Connect to Binance and return the top `n` base symbols (e.g. 'BTC','ETH',…)
-    ranked by their 24-hour USDT volume.
+    Return the top `n` base symbols (e.g. 'BTC','ETH',…) 
+    sorted by 24h USDT trading volume, using a lazy-loaded Binance client.
     """
-    # 1) Initialize the client
-    client = Client(API_KEY, API_SECRET, testnet=TESTNET)
+    client = _get_client()
+    try:
+        tickers = client.get_ticker()  # fetch 24h stats for all symbols
+    except Exception as e:
+        print(f"⚠️ Error fetching tickers: {e}")
+        return []
 
-    # 2) Fetch 24h ticker data for all symbols
-    #    NOTE: the correct method is get_ticker(), not get_ticker_24hr()
-    tickers = client.get_ticker()
-
-    # 3) Filter for USDT-quoted pairs
-    usdt_pairs = [t for t in tickers if t["symbol"].endswith("USDT")]
-
-    # 4) Sort descending by quoteVolume (the USD volume)
+    # Filter for USDT-quoted markets
+    usdt_pairs = [t for t in tickers if t.get("symbol", "").endswith("USDT")]
+    # Sort by quoteVolume descending
     sorted_pairs = sorted(
         usdt_pairs,
         key=lambda t: float(t.get("quoteVolume", 0)),
         reverse=True
     )
-
-    # 5) Strip off the “USDT” suffix to get base symbols
+    # Strip "USDT" to get base symbols
     base_symbols = [t["symbol"][:-4] for t in sorted_pairs]
-
-    # 6) Return only the top N
     return base_symbols[:n]
