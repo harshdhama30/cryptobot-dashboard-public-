@@ -6,3 +6,4 @@ scikit-learn
 nest-asyncio
 requests
 requests
+requests
