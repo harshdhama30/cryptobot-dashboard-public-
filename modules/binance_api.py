@@ -1,4 +1,4 @@
-k# modules/binance_api.py
+# modules/binance_api.py
 
 import os
 from binance.client import Client, BinanceAPIException
