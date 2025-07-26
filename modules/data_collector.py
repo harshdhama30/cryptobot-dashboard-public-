@@ -24,7 +24,7 @@ def collect_historical_data(symbols: list[str], years: int = 5) -> dict[str, pd.
 
     for base in symbols:
         pair = f"{base}USDT"
-        all_klines = []
+        all_klines: list = []
         next_start = start_time
 
         while True:
@@ -47,13 +47,14 @@ def collect_historical_data(symbols: list[str], years: int = 5) -> dict[str, pd.
                 break
 
             all_klines.extend(klines)
-            # If fewer than limit, we're done
             if len(klines) < 1000:
                 break
-n            # Otherwise, set next start to last kline's open_time + 1 ms
+
+            # prepare next window
             next_start = klines[-1][0] + 1
 
         if not all_klines:
+            print(f"⚠️ No data for {pair}, skipping.")
             continue
 
         # Build DataFrame
@@ -65,12 +66,9 @@ n            # Otherwise, set next start to last kline's open_time + 1 ms
                 "taker_buy_base", "taker_buy_quote", "ignore"
             ]
         )
-        # Convert timestamps
         df["open_time"] = pd.to_datetime(df["open_time"], unit="ms")
         df["close_time"] = pd.to_datetime(df["close_time"], unit="ms")
-        # Cast numeric columns
-        for col in ["open","high","low","close","volume",
-                    "quote_asset_volume","taker_buy_base","taker_buy_quote"]:
+        for col in ["open", "high", "low", "close", "volume", "quote_asset_volume", "taker_buy_base", "taker_buy_quote"]:
             df[col] = df[col].astype(float)
 
         data[base] = df
