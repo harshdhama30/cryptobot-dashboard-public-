@@ -2,4 +2,7 @@ streamlit
 pandas
 altair
 python-binance
-sc
+scikit-learn
+streamlit-autorefresh
+nest-asyncio
+requests
