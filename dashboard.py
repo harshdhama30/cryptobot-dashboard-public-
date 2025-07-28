@@ -9,17 +9,26 @@ st.set_page_config(page_title="Crypto Bot Dashboard", layout="wide")
 
 # -- Live Prices Section --
 st.header("💱 Live Prices")
-# Assume `selected` is defined earlier, e.g., top N symbols
-selected = st.multiselect("Select symbols", options=["BTC", "ETH", "XRP"], default=["BTC", "ETH"])
+# User selects base symbols (e.g., BTC, ETH)
+selected = st.multiselect(
+    "Select base symbols (e.g., BTC, ETH)",
+    options=["BTC", "ETH", "XRP", "BNB", "SOL"],
+    default=["BTC", "ETH"],
+)
 
 if selected:
-    # Create one column per symbol
     price_cols = st.columns(len(selected))
+    # Fetch and display current price for each selected symbol
     for col, sym in zip(price_cols, selected):
         with col:
             st.subheader(sym)
-            price = collect_historical_data([sym])[sym]["close"].iloc[-1]
-            st.metric(label="Price", value=f"${price:,.2f}")
+            pair = f"{sym}USDT"  # append USDT for trading pair
+            data = collect_historical_data([pair])
+            if pair in data:
+                price = data[pair]["close"].iloc[-1]
+                st.metric(label="Price", value=f"${price:,.2f}")
+            else:
+                st.error(f"Data for {pair} not available.")
 else:
     st.info("No symbols selected for live prices.")
 
